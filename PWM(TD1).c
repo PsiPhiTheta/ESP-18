@@ -114,7 +114,7 @@ void move (int angle, unsigned char forward)
     PORTBbits.RB3 = pr;
 
     for(int i = 0; i < exec_time_ms; i++)
-    {
+    { 
         Delay10TCYx(250);
     }
 }
