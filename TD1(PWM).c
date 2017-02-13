@@ -1,120 +1,123 @@
 #include "xc_configuration_bits.h"
-#include "plib/adc.h"
-#include "plib/timers.h"
-#include "plib/delays.h"
+#include "adc.h"
+#include "timers.h"
+#include "delays.h"
 #include "math.h"
-#include "plib/pwm.h"
+#include "pwm.h"
 
-#define time360 2000
+void move(int angle, int forward);
+void config(void);
+void Rmotor(int power);
+void Lmotor(int power);
 
-void move (int angle, unsigned char forward);
-void configure_MDB(void);
+int x = 0;
+int time360 = 1000;
 
 int main(void)
 {
-    configure_MDB();
-
-    move(0,1); //forward
-    move(0,-1); //backward
-
-    move(90,0); //90R (90T)
-    move(0,1); //forward
-    move(0,-1); //backward
-
-    move(-180,0); //180L (270T)
-    move(0,1); //forward
-    move(0,-1); //backward
-
-    move(-90,0); //90L (180T)
-    move(0,1); //forward
-    move(0,-1); //backward
-
-    move(180,0); //180R (0T)
-
-    move(90,1); //curve right
-    move(90,-1); //back
-
-    move(90,1); //curve right
-    move(90,-1); //back
-
-    move(-90,1); //curve left
-    move(-90,-1); //back
+    config();
+    
+    Delay10KTCYx(250);
+    Delay10KTCYx(250);
+    Delay10KTCYx(250);
+    Delay10KTCYx(250);
+    Delay10KTCYx(250);
+    Delay10KTCYx(250);
+    move(0, 1);
+    Delay10KTCYx(250);
+    move(0, -1);
+    Delay10KTCYx(250);
+    move(90, 0);
+    Delay10KTCYx(250);
+    move(-90, 0);
+    
+    PORTHbits.RH3 = 0; 
+    
+    ClosePWM4();
+    ClosePWM5();
+    while (1);
 }
 
-void configure_MDB(void)
+void move(int angle, int forward)
 {
-    PORTAbits.RA0 = 1; //bipolar setting
-    PORTAbits.RA1 = 1; //bipolar setting
-    //direction omitted as only relevant for unipolar
-}
-
-void move (int angle, unsigned char forward)
-{
-    int exec_time_ms = ((double)abs(angle)/360)*time360;
-
-    unsigned char pr = 0;
-    unsigned char pl = 0;
-
+    int exec_time_ms = ((double)sqrt(angle*angle)/360.0)*time360;
+    
     if(forward == 1)
     {
-        if(angle > 0)
-        {
-            pr = 255;
-            pl = 192;
-        }
-        else if (angle < 0)
-        {
-            pr = 192;
-            pl = 255;
-        }
-        else
-        {
-            pr = 255;
-            pl = 255;
-        }
+        PORTHbits.RH3 = 1;
+        Rmotor(750);
+        Lmotor(750);
+        Delay10KTCYx(250);
+        PORTHbits.RH3 = 0;
     }
-    else if (forward == 0)
+    else if(forward == -1)
+    {
+        PORTHbits.RH3 = 1;
+        Rmotor(250);
+        Lmotor(250);
+        Delay10KTCYx(250);
+        PORTHbits.RH3 = 0;
+    }
+    else if(forward == 0)
     {
         if(angle > 0)
         {
-            pr = 192;
-            pl = 128;
-        }
-        else if (angle < 0)
-        {
-            pr = 128;
-            pl = 192;
-        }
-        else
-        {
-            pr = 128;
-            pl = 128;
-        }
-    }
-    else if (forward == -1)
-    {
-        if(angle > 0)
-        {
-            pr = 64;
-            pl = 0;
-        }
-        else if (angle < 0)
-        {
-            pr = 0;
-            pl = 64;
+            PORTHbits.RH3 = 1;
+            Rmotor(750);
+            Lmotor(250);
+            for(int i = 0; i < exec_time_ms; i++)
+            {
+                Delay10TCYx(250);
+            }
+            PORTHbits.RH3 = 0;
         }
         else
         {
-            pr = 0;
-            pl = 0;
+            PORTHbits.RH3 = 1;
+            Rmotor(250);
+            Lmotor(750);
+            for(int i = 0; i < exec_time_ms; i++)
+            {
+                Delay10TCYx(250);
+            }
+            PORTHbits.RH3 = 0;
         }
     }
+}
 
-    PORTCbits.RC2 = pl;
-    PORTBbits.RB3 = pr;
 
-    for(int i = 0; i < exec_time_ms; i++)
-    { 
-        Delay10TCYx(250);
-    }
+void config(void)
+{
+    //pwm output
+    TRISGbits.RG3 = 0;
+    TRISGbits.RG4 = 0;
+    
+    TRISH = 0b10010100;
+    
+    //enable bit
+    //PORTHbits.RH3 = 1;
+    
+    //unipolar setting
+    PORTHbits.RH0 = 1;
+    PORTHbits.RH1 = 1;
+    
+    //direction bits
+    PORTHbits.RH5 = 0;
+    PORTHbits.RH6 = 0;
+    
+    //timer configuration
+    OpenTimer2(TIMER_INT_OFF & T2_PS_1_1 & T2_POST_1_1);
+
+    //OpenPWM2
+    OpenPWM4(252);
+    OpenPWM5(252);
+}
+
+void Rmotor(int power)
+{
+    SetDCPWM4(power);
+}
+void Lmotor(int power)
+{
+    SetDCPWM5(power);
 }
