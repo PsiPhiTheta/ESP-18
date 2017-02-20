@@ -2,6 +2,7 @@
     //Authors: Thomas Hollis, Charles Shelbourne
     //Project: ESP-18
     //Year: 2017
+    //Version: 1.1
 
 //1. File inclusions required
     #include "xc_config_settings.h"
@@ -26,7 +27,8 @@
         void LEDarray_off(void);
         unsigned char LSarray_read(void);
         void LEDarray_write(unsigned char x);
-        
+        unsigned char LEDarray_breakdetected(void);
+
     //2d. Proximity sensor functions
         //none required yet
 
@@ -46,6 +48,20 @@
             Delay10KTCYx(250);
             LEDarray_off();
             Delay10KTCYx(250);
+
+            while (LEDarray_breakdetected() == 0)
+                {
+                    LEDarray_off();
+                }
+
+            LEDarray_on();
+            Delay10KTCYx(25);
+            LEDarray_off();
+            Delay10KTCYx(25);
+            LEDarray_on();
+            Delay10KTCYx(25);
+            LEDarray_off();
+            Delay10KTCYx(25);
 
             while (1)
                 {
@@ -173,11 +189,19 @@
             }
         unsigned char LSarray_read(void)
             {
-                //Tom to Charlie: write a function that reads the value of the LS array (currently @RF1-RF7) 
+                unsigned char LSarray_val = 0;
+                //Tom to Charlie: write a function that reads the value of the LS array (currently @RF1-RF7). You may have to use the ADC. I may help you on this if it proves to be very involved.
+                return LSarray_val;
             }
         void LEDarray_write(unsigned char x)
             {
                 //Tom to Charlie: write a function that writes a unsigned char value to the LED array (should be connected to RB2-7 I think - see wiring diagram v3.1 on onedrive under /architecture)
+            }
+        unsigned char LEDarray_breakdetected(void)
+            {
+                unsigned char breakdetected = 0;
+                //Tom to Charlie: write a function that detects a small drop in voltage (comparator may be needed, I may join in on this one too - we might also bullshit our way through it)
+                return breakdetected;
             }
 
     //2d. Proximity sensor functions
