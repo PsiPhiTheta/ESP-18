@@ -2,7 +2,7 @@
     //Authors: Thomas Hollis, Charles Shelbourne
     //Project: ESP-18
     //Year: 2017
-    //Version: 1.1
+    //Version: 1.2
 
 //1. File inclusions required
     #include "xc_config_settings.h"
@@ -100,6 +100,7 @@
         void config_LS(void)
             {
                 //TOM to CHARLIE: write a function to setup all the pins that will be required or not as input/output
+                TRISB = 0b00000000;
             }
 
     //2b. Motor functions
@@ -181,11 +182,11 @@
     //2c. Line sensor functions
         void LEDarray_on(void)
             {
-                //Tom to Charlie: write a function to turn on the LEDarray
+                LATB = 0b11111100;
             }
         void LEDarray_off(void)
             {
-                //Tom to Charlie: write a function to turn off the LEDarray
+                LATB = 0b00000000;
             }
         unsigned char LSarray_read(void)
             {
@@ -195,7 +196,7 @@
             }
         void LEDarray_write(unsigned char x)
             {
-                //Tom to Charlie: write a function that writes a unsigned char value to the LED array (should be connected to RB2-7 I think - see wiring diagram v3.1 on onedrive under /architecture)
+                LATB = x << 2;
             }
         unsigned char LEDarray_breakdetected(void)
             {
