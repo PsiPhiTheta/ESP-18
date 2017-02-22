@@ -2,15 +2,15 @@
     //Authors: Thomas Hollis, Charles Shelbourne
     //Project: ESP-18
     //Year: 2017
-    //Version: 1.2
+    //Version: 1.3
 
 //1. File inclusions required
-    #include "xc_config_settings.h"
-    #include "adc.h"
-    #include "timers.h"
-    #include "delays.h"
+    #include "xc_configuration_bits.h"
+    #include "plib/adc.h"
+    #include "plib/timers.h"
+    #include "plib/delays.h"
     #include "math.h"
-    #include "pwm.h"
+    #include "plib/pwm.h"
 
 //2. Function prototypes
     //2a. Configuration functions
@@ -43,7 +43,7 @@
     int main(void)
         {
             config_LS();
-
+           
             LEDarray_on();
             Delay10KTCYx(250);
             LEDarray_off();
@@ -67,6 +67,7 @@
                 {
                     LEDarray_write(LSarray_read());
                 }
+            
         }
 
 //5. Functions
@@ -101,6 +102,7 @@
             {
                 //TOM to CHARLIE: write a function to setup all the pins that will be required or not as input/output
                 TRISB = 0b00000000;
+                LATB = 0x00;
             }
 
     //2b. Motor functions
@@ -182,7 +184,7 @@
     //2c. Line sensor functions
         void LEDarray_on(void)
             {
-                LATB = 0b11111100;
+                LATB = 0b11111110;
             }
         void LEDarray_off(void)
             {
@@ -202,6 +204,7 @@
             {
                 unsigned char breakdetected = 0;
                 //Tom to Charlie: write a function that detects a small drop in voltage (comparator may be needed, I may join in on this one too - we might also bullshit our way through it)
+                breakdetected = 1;
                 return breakdetected;
             }
 
@@ -210,7 +213,3 @@
 
     //2e. Speed encoder functions
         //none required yet
-
-
-
-
