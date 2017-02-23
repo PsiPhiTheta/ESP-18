@@ -2,7 +2,7 @@
     //Authors: Thomas Hollis, Charles Shelbourne
     //Project: ESP-18
     //Year: 2017
-    //Version: 1.3
+    //Version: 1.4
 
 //1. File inclusions required
     #include "xc_configuration_bits.h"
@@ -50,9 +50,9 @@
             Delay10KTCYx(250);
 
             while (LEDarray_breakdetected() == 0)
-                {
-                    LEDarray_off();
-                }
+            {
+                LEDarray_off();
+            }
 
             LEDarray_on();
             Delay10KTCYx(25);
@@ -64,9 +64,9 @@
             Delay10KTCYx(25);
 
             while (1)
-                {
-                    LEDarray_write(LSarray_read());
-                }
+            {
+                LEDarray_write(LSarray_read());
+            }
             
         }
 
@@ -192,13 +192,39 @@
             }
         unsigned char LSarray_read(void)
             {
-                unsigned char LSarray_val = 0;
-                //Tom to Charlie: write a function that reads the value of the LS array (currently @RF1-RF7). You may have to use the ADC. I may help you on this if it proves to be very involved.
-                return LSarray_val;
+                ADCON1 = 0x0F;
+                TRISA = 0xFF;
+                unsigned char LS0_val = 0;
+                unsigned char LS1_val = 0;
+                unsigned char LS_array = 0;
+                
+                OpenADC(ADC_FOSC_16 & ADC_RIGHT_JUST & ADC_0_TAD, ADC_CH0, 14);
+                ConvertADC();
+                
+                if(ReadADC() < 600)
+                    LS0_val = 1;
+                else 
+                    LS0_val = 0;
+                
+                CloseADC();
+                
+                OpenADC(ADC_FOSC_16 & ADC_RIGHT_JUST & ADC_0_TAD, ADC_CH1, 13);
+                ConvertADC();
+                
+                if(ReadADC() < 600)
+                    LS1_val = 1;
+                else 
+                    LS1_val = 0;
+                
+                CloseADC();
+                
+                LS_array = 2*LS0_val + LS1_val; 
+                
+                return LS_array;
             }
         void LEDarray_write(unsigned char x)
             {
-                LATB = x << 2;
+                LATB = x << 1;
             }
         unsigned char LEDarray_breakdetected(void)
             {
