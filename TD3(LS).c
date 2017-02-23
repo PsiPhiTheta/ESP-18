@@ -2,7 +2,7 @@
     //Authors: Thomas Hollis, Charles Shelbourne
     //Project: ESP-18
     //Year: 2017
-    //Version: 1.4
+    //Version: 1.5
 
 //1. File inclusions required
     #include "xc_configuration_bits.h"
