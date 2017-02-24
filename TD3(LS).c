@@ -2,10 +2,10 @@
     //Authors: Thomas Hollis, Charles Shelbourne
     //Project: ESP-18
     //Year: 2017
-    //Version: 1.5
+    //Version: 1.6
 
 //1. File inclusions required
-    #include "xc_configuration_bits.h"
+    #include "xc_config_settings.h"
     #include "plib/adc.h"
     #include "plib/timers.h"
     #include "plib/delays.h"
@@ -198,27 +198,29 @@
                 unsigned char LS1_val = 0;
                 unsigned char LS_array = 0;
                 
-                OpenADC(ADC_FOSC_16 & ADC_RIGHT_JUST & ADC_0_TAD, ADC_CH0, 14);
+                OpenADC(ADC_FOSC_16 & ADC_RIGHT_JUST & ADC_12_TAD, ADC_CH5, 0xE);
                 ConvertADC();
-                
+                while(BusyADC());
+                int valueOfReadADC = ReadADC();
                 if(ReadADC() < 600)
                     LS0_val = 1;
-                else 
+                else
                     LS0_val = 0;
                 
                 CloseADC();
                 
-                OpenADC(ADC_FOSC_16 & ADC_RIGHT_JUST & ADC_0_TAD, ADC_CH1, 13);
-                ConvertADC();
+               // OpenADC(ADC_FOSC_16 & ADC_RIGHT_JUST & ADC_12_TAD, ADC_CH6, 0xE);
+               // while(BusyADC());
+               //ConvertADC();
                 
-                if(ReadADC() < 600)
-                    LS1_val = 1;
-                else 
-                    LS1_val = 0;
+               // if(ReadADC() < 600)
+               //     LS1_val = 1;
+               // else 
+               //     LS1_val = 0;
                 
-                CloseADC();
+               // CloseADC();
                 
-                LS_array = 2*LS0_val + LS1_val; 
+                LS_array = LS0_val; 
                 
                 return LS_array;
             }
