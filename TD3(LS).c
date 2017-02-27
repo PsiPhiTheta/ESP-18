@@ -2,7 +2,7 @@
     //Authors: Thomas Hollis, Charles Shelbourne
     //Project: ESP-18
     //Year: 2017
-    //Version: 1.6
+    //Version: 1.7
 
 //1. File inclusions required
     #include "xc_config_settings.h"
@@ -23,7 +23,7 @@
         void Lmotor(int power);
 
     //2c. Line sensor functions
-        void LEDarray_on(void); 
+        void LEDarray_on(void);
         void LEDarray_off(void);
         unsigned char LSarray_read(void);
         void LEDarray_write(unsigned char x);
@@ -43,7 +43,7 @@
     int main(void)
         {
             config_LS();
-           
+
             LEDarray_on();
             Delay10KTCYx(250);
             LEDarray_off();
@@ -63,11 +63,37 @@
             LEDarray_off();
             Delay10KTCYx(25);
 
+            ADCON1 = 0x0D;
+            TRISA = 0xFF;
+
+            unsigned int valueOfReadADC = 0;
+
+            unsigned char LS0_val = 0;
+            unsigned char LS1_val = 0;
+            unsigned char LS_array = 0;
+
+            OpenADC(ADC_FOSC_16 & ADC_RIGHT_JUST & ADC_12_TAD, ADC_CH0 & ADC_INT_OFF & ADC_VREFPLUS_VDD & ADC_VREFMINUS_VSS, 14);
+
             while (1)
             {
-                LEDarray_write(LSarray_read());
+
+               ConvertADC();
+               while(BusyADC());
+
+               valueOfReadADC = ReadADC();
+
+               if(valueOfReadADC > 700)
+                   LS1_val = 1;
+               else
+                   LS1_val = 0;
+
+               //CloseADC();
+
+               LS_array = LS1_val;
+
+                LEDarray_write(LS_array);
             }
-            
+
         }
 
 //5. Functions
@@ -102,7 +128,6 @@
             {
                 //TOM to CHARLIE: write a function to setup all the pins that will be required or not as input/output
                 TRISB = 0b00000000;
-                LATB = 0x00;
             }
 
     //2b. Motor functions
@@ -197,32 +222,34 @@
                 unsigned char LS0_val = 0;
                 unsigned char LS1_val = 0;
                 unsigned char LS_array = 0;
-                
-                OpenADC(ADC_FOSC_16 & ADC_RIGHT_JUST & ADC_12_TAD, ADC_CH5, 0xE);
+
+                /*OpenADC(ADC_FOSC_16 & ADC_RIGHT_JUST & ADC_12_TAD, ADC_CH0, 0xE);
                 ConvertADC();
                 while(BusyADC());
-                int valueOfReadADC = ReadADC();
-                if(ReadADC() < 600)
+
+                if(ReadADC() < 850)
                     LS0_val = 1;
                 else
                     LS0_val = 0;
-                
-                CloseADC();
-                
-               // OpenADC(ADC_FOSC_16 & ADC_RIGHT_JUST & ADC_12_TAD, ADC_CH6, 0xE);
-               // while(BusyADC());
-               //ConvertADC();
-                
-               // if(ReadADC() < 600)
-               //     LS1_val = 1;
-               // else 
-               //     LS1_val = 0;
-                
-               // CloseADC();
-                
-                LS_array = LS0_val; 
-                
-                return LS_array;
+
+                CloseADC();*/
+
+               OpenADC(ADC_FOSC_16 & ADC_RIGHT_JUST & ADC_12_TAD, ADC_CH0, 0x00);
+               ConvertADC();
+               while(BusyADC());
+
+               int valueOfReadADC = ReadADC();
+
+               if(ReadADC() < 1)
+                   LS1_val = 1;
+               else
+                   LS1_val = 0;
+
+               CloseADC();
+
+               LS_array = LS1_val;
+
+               return LS_array;
             }
         void LEDarray_write(unsigned char x)
             {
