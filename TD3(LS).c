@@ -2,10 +2,10 @@
     //Authors: Thomas Hollis, Charles Shelbourne
     //Project: ESP-18
     //Year: 2017
-    //Version: 1.7
+    //Version: 2.1
 
 //1. File inclusions required
-    #include "xc_config_settings.h"
+    #include "xc_configuration_bits.h"
     #include "plib/adc.h"
     #include "plib/timers.h"
     #include "plib/delays.h"
@@ -63,35 +63,12 @@
             LEDarray_off();
             Delay10KTCYx(25);
 
-            ADCON1 = 0x0D;
-            TRISA = 0xFF;
-
-            unsigned int valueOfReadADC = 0;
-
-            unsigned char LS0_val = 0;
-            unsigned char LS1_val = 0;
-            unsigned char LS_array = 0;
-
-            OpenADC(ADC_FOSC_16 & ADC_RIGHT_JUST & ADC_12_TAD, ADC_CH0 & ADC_INT_OFF & ADC_VREFPLUS_VDD & ADC_VREFMINUS_VSS, 14);
+            OpenADC(ADC_FOSC_16 & ADC_RIGHT_JUST & ADC_12_TAD, ADC_CH0 & ADC_INT_OFF & ADC_VREFPLUS_VDD & ADC_VREFMINUS_VSS, 0);
 
             while (1)
             {
-
-               ConvertADC();
-               while(BusyADC());
-
-               valueOfReadADC = ReadADC();
-
-               if(valueOfReadADC > 700)
-                   LS1_val = 1;
-               else
-                   LS1_val = 0;
-
-               //CloseADC();
-
-               LS_array = LS1_val;
-
-                LEDarray_write(LS_array);
+                LEDarray_write(LSarray_read());
+                //Delay1KTCYx(25);
             }
 
         }
@@ -125,9 +102,9 @@
                 OpenPWM5(252);
             }
         void config_LS(void)
-            {
-                //TOM to CHARLIE: write a function to setup all the pins that will be required or not as input/output
-                TRISB = 0b00000000;
+            {    
+                ADCON1 = 0x00;
+                TRISA = 0b00000000;
             }
 
     //2b. Motor functions
@@ -209,51 +186,58 @@
     //2c. Line sensor functions
         void LEDarray_on(void)
             {
-                LATB = 0b11111110;
+                LATA = 0b00111111;
             }
         void LEDarray_off(void)
             {
-                LATB = 0b00000000;
+                LATA = 0b00000000;
             }
         unsigned char LSarray_read(void)
             {
-                ADCON1 = 0x0F;
-                TRISA = 0xFF;
-                unsigned char LS0_val = 0;
-                unsigned char LS1_val = 0;
+                unsigned char LS_val[6] = {0, 0, 0, 0, 0, 0};
                 unsigned char LS_array = 0;
+                int value = 0;
+                int checking = 0;
+                
+                for(int i = 0; i < 6; i++)
+                {
+                    value = 0;
+                    switch(i)
+                    {
+                        case 0: SetChanADC(ADC_CH5);
+                        break;
+                        case 1: SetChanADC(ADC_CH6);
+                        break;
+                        case 2: SetChanADC(ADC_CH7);
+                        break;
+                        case 3: SetChanADC(ADC_CH8);
+                        break;
+                        case 4: SetChanADC(ADC_CH9);
+                        break;
+                        case 5: SetChanADC(ADC_CH10);
+                        break;
+                        default:break;
+                    }
+                    
+                    ConvertADC();
+                    while(BusyADC());
+                    value = ReadADC();
+                    
+                    if(value > 700)
+                        LS_val[i] = 1;
+                    else
+                        LS_val[i] = 0;
+                    
+                    checking = LS_val [i];
+                    LS_array += LS_val[i]*pow(2,i);
+                }
 
-                /*OpenADC(ADC_FOSC_16 & ADC_RIGHT_JUST & ADC_12_TAD, ADC_CH0, 0xE);
-                ConvertADC();
-                while(BusyADC());
+                return LS_array;
 
-                if(ReadADC() < 850)
-                    LS0_val = 1;
-                else
-                    LS0_val = 0;
-
-                CloseADC();*/
-
-               OpenADC(ADC_FOSC_16 & ADC_RIGHT_JUST & ADC_12_TAD, ADC_CH0, 0x00);
-               ConvertADC();
-               while(BusyADC());
-
-               int valueOfReadADC = ReadADC();
-
-               if(ReadADC() < 1)
-                   LS1_val = 1;
-               else
-                   LS1_val = 0;
-
-               CloseADC();
-
-               LS_array = LS1_val;
-
-               return LS_array;
             }
         void LEDarray_write(unsigned char x)
             {
-                LATB = x << 1;
+                LATA = x;
             }
         unsigned char LEDarray_breakdetected(void)
             {
