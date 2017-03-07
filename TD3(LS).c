@@ -2,7 +2,7 @@
     //Authors: Thomas Hollis, Charles Shelbourne
     //Project: ESP-18
     //Year: 2017
-    //Version: 3.1
+    //Version: 3.2
 
 //1. File inclusions required
     #include "xc_config_settings.h"
@@ -122,7 +122,7 @@
             OpenTimer0(TIMER_INT_ON & T0_16BIT & T0_SOURCE_INT & T0_PS_1_1);
             WriteTimer0(12536);
             OpenCapture3(CAPTURE_INT_ON & C3_EVERY_RISE_EDGE);
-   
+
             TRISB =0x00;
         }
 
@@ -223,17 +223,17 @@
                     value = 0;
                     switch(i)
                     {
-                        case 0: SetChanADC(ADC_CH5);
+                        case 0: SetChanADC(ADC_CH10);
                         break;
-                        case 1: SetChanADC(ADC_CH6);
+                        case 1: SetChanADC(ADC_CH9);
                         break;
-                        case 2: SetChanADC(ADC_CH7);
+                        case 2: SetChanADC(ADC_CH8);
                         break;
-                        case 3: SetChanADC(ADC_CH8);
+                        case 3: SetChanADC(ADC_CH7);
                         break;
-                        case 4: SetChanADC(ADC_CH9);
+                        case 4: SetChanADC(ADC_CH6);
                         break;
-                        case 5: SetChanADC(ADC_CH10);
+                        case 5: SetChanADC(ADC_CH5);
                         break;
                         default:break;
                     }
@@ -275,20 +275,21 @@
         }
         void interrupt isr(void)
         {
-            if(INTCONbits.TMR0IF == 1){    //Proximity trigger signal
-                INTCONbits.TMR0IF =0;
-                s = s^1;
-                LATBbits.LATB0 =s;   //J2 13
+            if(INTCONbits.TMR0IF == 1)
+            {    //Proximity trigger signal
+               INTCONbits.TMR0IF =0;
+               s = s^1;
+               LATBbits.LATB0 =s;   //J2 13
                WriteTimer0(40563);
-
             }
-            if(PIR3bits.CCP3IF == 1){
+            if(PIR3bits.CCP3IF == 1)
+            {
                 PIR3bits.CCP3IF =0;  //CCP4 interrupt bit zeroed
                 y= y^1;              //switched between 1 and 0
-                if(y==1){
-                CCP3CON = 4;  //configure CCP 4 to interrupt on falling edge
-                WriteTimer3(0);  //refresh timer3
-
+                if(y==1)
+                {
+                    CCP3CON = 4;  //configure CCP 4 to interrupt on falling edge
+                    WriteTimer3(0);  //refresh timer3
                 }
                 else
                 {
@@ -296,18 +297,17 @@
                     CCP3CON = 5;     //configure to interrupt on rising edge
                     if(logic_high<1360)
                     {    //1360 ticks of clock before LED's turn on relates to 544uS that echo signal is high => aprox 11.3cm
-                        LATA=0xFF;     // uS/48 = distance
+                        LATBbits.LATB1=1;     // uS/48 = distance
                     }
                     else
                     {
-                        LATA=0x00;
+                        LATBbits.LATB1=0;
                     }
                 }
 
-                }
+             }
         }
 
     //2e. Speed encoder functions
         //none required yet
-
 
