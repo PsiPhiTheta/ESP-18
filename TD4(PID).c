@@ -2,18 +2,18 @@
     //Authors: Thomas Hollis, Charles Shelbourne
     //Project: ESP-18
     //Year: 2017
-    //Version: 1.0
+    //Version: 2.0
 
 //1. File inclusions required
-    #include "xc_configuration_bits.h"
-    #include "adc.h"
-    #include "timers.h"
-    #include "delays.h"
-    #include "math.h"
-    #include "pwm.h"
-    #include "capture.h"
+#include "xc_configuration_bits.h"
+#include "adc.h"
+#include "timers.h"
+#include "delays.h"
+#include "math.h"
+#include "pwm.h"
+#include "capture.h"
 
-//2. Function prototypes
+// <editor-fold defaultstate="collapsed" desc="Function Declarations">
 
 //Configuration functions
     void config_PWM(void);
@@ -40,54 +40,118 @@
 //Speed encoder functions
     //none required yet
 
-//3. Global variables
-    int x = 0;
-    int time180 = 1000;
+//</editor-fold>
 
-    volatile char y=0,s=0;
-    volatile unsigned int logic_high =0;
-    
-    unsigned char LS_val[6] = {0, 0, 0, 0, 0, 0};
+
+//3. Global variables
+int x = 0;
+int time180 = 1000;
+int integral = 0;
+int prev_error = 0;
+
+
+volatile char y=0,s=0;
+volatile unsigned int logic_high =0;
+
+unsigned char LS_val[6] = {0, 0, 0, 0, 0, 0};
 
 //4. Main Line Code
-    int main(void)
+int main(void)
+{
+    config_LS();
+    config_PS();
+    config_PWM();
+    enable_global_interrupts();
+    OpenADC(ADC_FOSC_16 & ADC_RIGHT_JUST & ADC_12_TAD, ADC_CH0 & ADC_INT_OFF & ADC_VREFPLUS_VDD & ADC_VREFMINUS_VSS, 0);
+
+    while (1)
     {
-        config_LS();
-        config_PS();
-        config_PWM();
-        //enable_global_interrupts();
-        OpenADC(ADC_FOSC_16 & ADC_RIGHT_JUST & ADC_12_TAD, ADC_CH0 & ADC_INT_OFF & ADC_VREFPLUS_VDD & ADC_VREFMINUS_VSS, 0);
+        LSarray_read();
+        move(PID(computeError()));
 
-        while (1)
+        int temp;
+
+        for(int i = 0; i < 6; i++)
         {
-            LSarray_read();
-
-            int i = LS_val[0]^LS_val[1];
-            int k = LS_val[2]^LS_val[4];
-            
-            unsigned char right = 2*LS_val[0] + 1*i*LS_val[1];
-            unsigned char left = 2*LS_val[4] + 1*k*LS_val[2];
-            
-         
-            if(left>right)
-            {
-                move(left);
-            }
-            else if(left<right)
-            {
-                move(-right);
-            }
-            else if (right == 0 && left == 0)
-            {
-                stop();
-            }
-            
-            
+            temp += LS_val[i];
         }
 
+        if(temp == 0)
+        {
+            Delay10TCYx(25);
+            LSarray_read();
+
+            for(int i = 0; i < 6; i++)
+            {
+                temp += LS_val[i];
+            }
+
+            /*if(temp == 0)
+            {
+                if(scan() == 0);
+                {
+                    stop();
+                    break;
+                }
+            }*/
+        }
     }
 
-//5. Functions
+}
+
+int computeError(void)
+{
+    int close_left;
+    int mid_left;
+    int far_left;
+    int close_right;
+    int mid_right;
+    int far_right;
+    int error;
+
+    close_left = -1*LS_val[3];
+    close_right = 1*LS_val[2];
+    mid_left = -2*LS_val[4];
+    mid_right = 2*LS_val[1];
+    far_left = -3*LS_val[5];
+    far_right = 3*LS_val[0];
+
+    error = (close_left + mid_left + far_left + close_right + mid_right + far_right);
+    return error;
+}
+
+int PID(int error)
+{
+    int Kp = 6;
+    int Ki = 1;
+    int Kd = 3;
+
+    int P;
+    int I;
+    int D;
+
+    int current_error;
+    int output;
+
+    current_error = error;
+
+    integral = integral + error;
+
+    P = Kp*error;
+    I = Ki*integral;
+    D = Kd*(current_error - prev_error);
+
+    prev_error = error;
+
+    output = P + I + D;
+
+    return output;
+
+}
+
+
+
+// <editor-fold defaultstate="collapsed" desc="Functions">
 //Configuration functions
     void config_PWM(void)
     {
@@ -131,37 +195,30 @@
 
         TRISB =0x00;
         TRISC = 0x00;
-    }
 
 //Motor functions
-    
+
     void stop()
     {
         PORTHbits.RH3 = 0;
     }
-    
-    void move(int error)
+
+    void move(int PID_error)
     {
         PORTHbits.RH3 = 1;
-        Lmotor(700+50*error);
-        Rmotor(700+50*(-error));
-        Delay10KTCYx(225);
-        PORTHbits.RH3 = 0;  
+        Lmotor(700+PID_error);
+        Rmotor(700-PID_error);
     }
-    
+
     void turn180()
     {
         PORTHbits.RH3 = 1;
         Rmotor(300);
         Lmotor(700);
-        for(int i = 0; i < time180; i++)
-        {
-            Delay10TCYx(200);
-            Delay10TCYx(200);
-        }
+        Delay10KTCYx(250);
         PORTHbits.RH3 = 0;
     }
-    
+
     void Rmotor(int power)
     {
         SetDCPWM4(power);
@@ -262,10 +319,10 @@
                 else if(logic_high<1360 && logic_high >= 680)
                 {    //1360 ticks of clock before LED's turn on relates to 544uS that echo signal is high => aprox 11.3cm
                     turn180();     // uS/48 = distance
-                }  
+                }
                 else if (logic_high < 680)
                 {
-                    turn180(); 
+                    turn180();
                 }
                 else
                 {
@@ -277,3 +334,5 @@
     }
     //2e. Speed encoder functions
         //none required yet
+
+// </editor-fold>
