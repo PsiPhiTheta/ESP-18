@@ -1,19 +1,21 @@
-//0. Code information
+// <editor-fold defaultstate="collapsed" desc="0. Code information">
     //Authors: Thomas Hollis, Charles Shelbourne
     //Project: ESP-18
     //Year: 2017
-    //Version: 2.1
+    //Version: 3.1
+// </editor-fold>
 
-//1. File inclusions required
-#include "xc_configuration_bits.h"
+// <editor-fold defaultstate="collapsed" desc="1. File inclusions required">
+#include "xc_config_settings.h"
 #include "adc.h"
 #include "timers.h"
 #include "delays.h"
 #include "math.h"
 #include "pwm.h"
 #include "capture.h"
+// </editor-fold>
 
-// <editor-fold defaultstate="collapsed" desc="Function Declarations">
+// <editor-fold defaultstate="collapsed" desc="2. Function Declarations">
 
 //Configuration functions
     void config_PWM(void);
@@ -21,10 +23,12 @@
     void config_PS(void);
 
 //Motor functions
-    void move(int left);
+    void stop(void);
+    void move(int PID_error);
+    void turn180 (void);
     void Rmotor(int power);
     void Lmotor(int power);
-    void stop();
+
 
 //Line sensor functions
     void LEDarray_on(void);
@@ -33,6 +37,10 @@
     void LEDarray_write(unsigned char x);
     unsigned char LEDarray_breakdetected(void);
 
+//PID functions
+    int computeError(void);
+    int PID(int Error);
+    
 //Proximity sensor functions
     void interrupt isr(void);
     void enable_global_interrupts(void);
@@ -42,20 +50,19 @@
 
 //</editor-fold>
 
-
-//3. Global variables
+// <editor-fold defaultstate="collapsed" desc="3. Global variables">
 int x = 0;
 int time180 = 1000;
 int integral = 0;
 int prev_error = 0;
 
-
 volatile char y=0,s=0;
 volatile unsigned int logic_high =0;
 
 unsigned char LS_val[6] = {0, 0, 0, 0, 0, 0};
+// </editor-fold>
 
-//4. Main Line Code
+// <editor-fold defaultstate="collapsed" desc="4. Main Line Code">
 int main(void)
 {
     config_LS();
@@ -69,7 +76,7 @@ int main(void)
         LSarray_read();
         move(PID(computeError()));
 
-        int temp;
+        int temp; //global?
 
         for(int i = 0; i < 6; i++)
         {
@@ -98,60 +105,10 @@ int main(void)
     }
 
 }
+// </editor-fold>
 
-int computeError(void)
-{
-    int close_left;
-    int mid_left;
-    int far_left;
-    int close_right;
-    int mid_right;
-    int far_right;
-    int error;
+// <editor-fold defaultstate="collapsed" desc="5. Functions">
 
-    close_left = -1*LS_val[3];
-    close_right = 1*LS_val[2];
-    mid_left = -2*LS_val[4];
-    mid_right = 2*LS_val[1];
-    far_left = -3*LS_val[5];
-    far_right = 3*LS_val[0];
-
-    error = (close_left + mid_left + far_left + close_right + mid_right + far_right);
-    return error;
-}
-
-int PID(int error)
-{
-    int Kp = 6;
-    int Ki = 1;
-    int Kd = 3;
-
-    int P;
-    int I;
-    int D;
-
-    int current_error;
-    int output;
-
-    current_error = error;
-
-    integral = integral + error;
-
-    P = Kp*error;
-    I = Ki*integral;
-    D = Kd*(current_error - prev_error);
-
-    prev_error = error;
-
-    output = P + I + D;
-
-    return output;
-
-}
-
-
-
-// <editor-fold defaultstate="collapsed" desc="Functions">
 //Configuration functions
     void config_PWM(void)
     {
@@ -195,10 +152,20 @@ int PID(int error)
 
         TRISB =0x00;
         TRISC = 0x00;
+    }
 
 //Motor functions
+    void Rmotor(int power)
+    {
+        SetDCPWM4(power);
+    }
+    
+    void Lmotor(int power)
+    {
+        SetDCPWM5(power);
+    }
 
-    void stop()
+    void stop(void)
     {
         PORTHbits.RH3 = 0;
     }
@@ -210,7 +177,7 @@ int PID(int error)
         Rmotor(700-PID_error);
     }
 
-    void turn180()
+    void turn180(void)
     {
         PORTHbits.RH3 = 1;
         Rmotor(300);
@@ -219,24 +186,17 @@ int PID(int error)
         PORTHbits.RH3 = 0;
     }
 
-    void Rmotor(int power)
-    {
-        SetDCPWM4(power);
-    }
-    void Lmotor(int power)
-    {
-        SetDCPWM5(power);
-    }
-
 //Line sensor functions
     void LEDarray_on(void)
     {
         LATA = 0b00111111;
     }
+
     void LEDarray_off(void)
     {
         LATA = 0b00000000;
     }
+
     void LSarray_read(void)
     {
         int value = 0;
@@ -271,10 +231,12 @@ int PID(int error)
                 LS_val[i] = 0;
         }
     }
+
     void LEDarray_write(unsigned char x)
     {
         LATA = x;
     }
+
     unsigned char LEDarray_breakdetected(void)
     {
         unsigned char breakdetected = 0;
@@ -288,6 +250,7 @@ int PID(int error)
         INTCONbits.GIE = 1;
         INTCONbits.PEIE = 1;
     }
+    
     void interrupt isr(void)
     {
         if(INTCONbits.TMR0IF) //Proximity trigger signal
@@ -332,7 +295,59 @@ int PID(int error)
 
         }
     }
+
+    //2e. PID functions
+    int computeError(void)
+    {
+        int close_left;
+        int mid_left;
+        int far_left;
+        int close_right;
+        int mid_right;
+        int far_right;
+        int error;
+
+        close_left = -1*LS_val[3];
+        close_right = 1*LS_val[2];
+        mid_left = -2*LS_val[4];
+        mid_right = 2*LS_val[1];
+        far_left = -3*LS_val[5];
+        far_right = 3*LS_val[0];
+
+        error = (close_left + mid_left + far_left + close_right + mid_right + far_right);
+        return error;
+    }
+
+    int PID(int error)
+    {
+        int Kp = 6;
+        int Ki = 0;
+        int Kd = 3;
+
+        int P;
+        int I;
+        int D;
+
+        int current_error;
+        int output;
+
+        current_error = error;
+
+        integral = integral + error;
+
+        P = Kp*error;
+        I = Ki*integral;
+        D = Kd*(current_error - prev_error);
+
+        prev_error = error;
+
+        output = P + I + D;
+
+        return output;
+    }
+
     //2e. Speed encoder functions
         //none required yet
 
 // </editor-fold>
+
