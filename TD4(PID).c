@@ -2,11 +2,11 @@
     //Authors: Thomas Hollis, Charles Shelbourne
     //Project: ESP-18
     //Year: 2017
-    //Version: 3.1
+    //Version: 4.1
 // </editor-fold>
 
 // <editor-fold defaultstate="collapsed" desc="1. File inclusions required">
-#include "xc_config_settings.h"
+#include "xc_configuration_bits.h"
 #include "adc.h"
 #include "timers.h"
 #include "delays.h"
@@ -39,6 +39,7 @@
 
 //PID functions
     int computeError(void);
+    unsigned char error_switch(unsigned char sum);
     int PID(int Error);
     
 //Proximity sensor functions
@@ -60,6 +61,8 @@ volatile char y=0,s=0;
 volatile unsigned int logic_high =0;
 
 unsigned char LS_val[6] = {0, 0, 0, 0, 0, 0};
+unsigned char last_val = 0;        
+
 // </editor-fold>
 
 // <editor-fold defaultstate="collapsed" desc="4. Main Line Code">
@@ -173,8 +176,8 @@ int main(void)
     void move(int PID_error)
     {
         PORTHbits.RH3 = 1;
-        Lmotor(700+PID_error);
-        Rmotor(700-PID_error);
+        Rmotor(650+PID_error);
+        Lmotor(650-PID_error);
     }
 
     void turn180(void)
@@ -183,6 +186,7 @@ int main(void)
         Rmotor(300);
         Lmotor(700);
         Delay10KTCYx(250);
+        Delay10KTCYx(100);
         PORTHbits.RH3 = 0;
     }
 
@@ -225,7 +229,7 @@ int main(void)
             while(BusyADC());
             value = ReadADC();
             unsigned char temp = i;
-            if(value > 700)
+            if(value > 850)
                 LS_val[i] = 1;
             else
                 LS_val[i] = 0;
@@ -275,21 +279,9 @@ int main(void)
             {
                 logic_high = ReadTimer3();
                 CCP3CON = 5;     //configure to interrupt on rising edge
-                if(logic_high<2040 && logic_high >= 1360)
+                if(logic_high < 4080)
                 {    //1360 ticks of clock before LED's turn on relates to 544uS that echo signal is high => aprox 11.3cm
                     turn180();     // uS/48 = distance
-                }
-                else if(logic_high<1360 && logic_high >= 680)
-                {    //1360 ticks of clock before LED's turn on relates to 544uS that echo signal is high => aprox 11.3cm
-                    turn180();     // uS/48 = distance
-                }
-                else if (logic_high < 680)
-                {
-                    turn180();
-                }
-                else
-                {
-                    LATC=0x00;
                 }
             }
 
@@ -305,24 +297,103 @@ int main(void)
         int close_right;
         int mid_right;
         int far_right;
-        int error;
-
+        unsigned char error;
+        
+        
         close_left = -1*LS_val[3];
         close_right = 1*LS_val[2];
-        mid_left = -2*LS_val[4];
-        mid_right = 2*LS_val[1];
-        far_left = -3*LS_val[5];
-        far_right = 3*LS_val[0];
-
+        mid_left = -4*LS_val[4];
+        mid_right = 4*LS_val[1];
+        far_left = -16*LS_val[5];
+        far_right = 16*LS_val[0];
+        
         error = (close_left + mid_left + far_left + close_right + mid_right + far_right);
+        
+        
+        
+        //unsigned char sum = 1*LS_val[0] + 2*LS_val[1] + 4*LS_val[2] + 8*LS_val[3] + 16*LS_val[4] + 32*LS_val[5]; 
+
+        //if(sum == 0)
+          //  error = error_switch(last_val);
+        //else
+        //{
+           // last_val = sum;
+            //error = error_switch(sum);
+        //}
+        
+        
         return error;
     }
 
+    unsigned char error_switch(unsigned char sum)
+    {
+        unsigned char temp_error = 0;
+        
+        switch (sum){
+            case 1:
+                temp_error = 12;
+                break;
+            case 2:
+                temp_error = 3;
+                break;
+            case 4:
+                temp_error = 1;
+                break;
+            case 8:
+                temp_error = -1;
+                break;
+            case 16:
+                temp_error = -3;
+                break;
+            case 32:
+                temp_error = -12;
+                break;
+            /*case 3:
+                temp_error = 8;
+                break;
+            case 6:
+                temp_error = 0;
+                break;
+            case 12:
+                temp_error = 0;
+                break;
+            case 24:
+                temp_error = 0;
+                break;
+            case 48:
+                temp_error = -8;
+                break;
+            case 7:
+                temp_error = 3;
+                break;
+            case 14:
+                temp_error = 0;
+                break;
+            case 28:
+                temp_error = 0;
+                break;
+            case 56:
+                temp_error = 0;
+                break;
+            case 112:
+                temp_error = -3;
+                break;*/
+            default:
+                break;
+                
+        }
+        
+        
+        
+        return temp_error;
+        
+    }
+    
     int PID(int error)
     {
-        int Kp = 6;
+        int Kp = 3;
         int Ki = 0;
-        int Kd = 3;
+        int Kd = 2;
 
         int P;
         int I;
@@ -350,4 +421,3 @@ int main(void)
         //none required yet
 
 // </editor-fold>
-
