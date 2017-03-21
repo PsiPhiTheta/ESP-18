@@ -1,12 +1,12 @@
 // <editor-fold defaultstate="collapsed" desc="0. Code information">
     //Authors: Thomas Hollis, Charles Shelbourne
-    //Project: ESP-18 
+    //Project: ESP-18
     //Year: 2017
-    //Version: 4.1
+    //Version: 5.2
 // </editor-fold>
 
 // <editor-fold defaultstate="collapsed" desc="1. File inclusions required">
-#include "xc_configuration_bits.h"
+#include "xc_config_settings.h"
 #include "adc.h"
 #include "timers.h"
 #include "delays.h"
@@ -41,7 +41,7 @@
     int computeError(void);
     unsigned char error_switch(unsigned char sum);
     int PID(int Error);
-    
+
 //Proximity sensor functions
     void interrupt isr(void);
     void enable_global_interrupts(void);
@@ -61,7 +61,7 @@ volatile char y=0,s=0;
 volatile unsigned int logic_high =0;
 
 unsigned char LS_val[6] = {0, 0, 0, 0, 0, 0};
-unsigned char last_val = 0;        
+unsigned char last_val = 0;
 
 // </editor-fold>
 
@@ -111,7 +111,6 @@ int main(void)
 // </editor-fold>
 
 // <editor-fold defaultstate="collapsed" desc="5. Functions">
-
 //Configuration functions
     void config_PWM(void)
     {
@@ -162,7 +161,7 @@ int main(void)
     {
         SetDCPWM4(power);
     }
-    
+
     void Lmotor(int power)
     {
         SetDCPWM5(power);
@@ -176,8 +175,8 @@ int main(void)
     void move(int PID_error)
     {
         PORTHbits.RH3 = 1;
-        Rmotor(650+PID_error);
-        Lmotor(650-PID_error);
+        Rmotor(720+PID_error);
+        Lmotor(720-PID_error);
     }
 
     void turn180(void)
@@ -229,7 +228,7 @@ int main(void)
             while(BusyADC());
             value = ReadADC();
             unsigned char temp = i;
-            if(value > 850)
+                                                                                                                                if(value > 850)
                 LS_val[i] = 1;
             else
                 LS_val[i] = 0;
@@ -254,7 +253,7 @@ int main(void)
         INTCONbits.GIE = 1;
         INTCONbits.PEIE = 1;
     }
-    
+
     void interrupt isr(void)
     {
         if(INTCONbits.TMR0IF) //Proximity trigger signal
@@ -297,21 +296,30 @@ int main(void)
         int close_right;
         int mid_right;
         int far_right;
-        unsigned char error;
-        
-        
+        unsigned char error = 0;
+
+
+        unsigned char sum = LS_val[0] + LS_val[1] + LS_val[2] + LS_val[3] + LS_val[4] + LS_val[5];
+       
+
+        if(sum == 0)
+        {
+            return last_val;
+        }
+
         close_left = -1*LS_val[3];
         close_right = 1*LS_val[2];
         mid_left = -4*LS_val[4];
         mid_right = 4*LS_val[1];
         far_left = -16*LS_val[5];
         far_right = 16*LS_val[0];
-        
+
+
         error = (close_left + mid_left + far_left + close_right + mid_right + far_right);
-        
-        
-        
-        //unsigned char sum = 1*LS_val[0] + 2*LS_val[1] + 4*LS_val[2] + 8*LS_val[3] + 16*LS_val[4] + 32*LS_val[5]; 
+        last_val = error;
+
+
+        //unsigned char sum = 1*LS_val[0] + 2*LS_val[1] + 4*LS_val[2] + 8*LS_val[3] + 16*LS_val[4] + 32*LS_val[5];
 
         //if(sum == 0)
           //  error = error_switch(last_val);
@@ -320,15 +328,15 @@ int main(void)
            // last_val = sum;
             //error = error_switch(sum);
         //}
-        
-        
+
+
         return error;
     }
 
     unsigned char error_switch(unsigned char sum)
     {
         unsigned char temp_error = 0;
-        
+
         switch (sum){
             case 1:
                 temp_error = 12;
@@ -380,18 +388,18 @@ int main(void)
                 break;*/
             default:
                 break;
-                
+
         }
-        
-        
-        
+
+
+
         return temp_error;
-        
+
     }
-    
+
     int PID(int error)
     {
-        int Kp = 3;
+        int Kp = 4;
         int Ki = 0;
         int Kd = 2;
 
