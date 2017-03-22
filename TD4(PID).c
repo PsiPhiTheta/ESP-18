@@ -2,11 +2,11 @@
     //Authors: Thomas Hollis, Charles Shelbourne
     //Project: ESP-18
     //Year: 2017
-    //Version: 5.2
+    //Version: 6.2
 // </editor-fold>
 
 // <editor-fold defaultstate="collapsed" desc="1. File inclusions required">
-#include "xc_config_settings.h"
+#include "xc_configuration_bits.h"
 #include "adc.h"
 #include "timers.h"
 #include "delays.h"
@@ -39,8 +39,8 @@
 
 //PID functions
     int computeError(void);
-    unsigned char error_switch(unsigned char sum);
-    int PID(int Error);
+    int error_switch(int sum);
+    int PID(int error);
 
 //Proximity sensor functions
     void interrupt isr(void);
@@ -77,18 +77,17 @@ int main(void)
     while (1)
     {
         LSarray_read();
-        move(PID(computeError()));
-
-        int temp; //global?
-
+        int error = computeError();
+        int temp = 0; //global?
+        
         for(int i = 0; i < 6; i++)
         {
             temp += LS_val[i];
         }
-
-        if(temp == 0)
+        
+        if(temp == 0 && (error <= 5 || error >= -5))
         {
-            Delay10TCYx(25);
+            Delay10KTCYx(25);
             LSarray_read();
 
             for(int i = 0; i < 6; i++)
@@ -96,15 +95,16 @@ int main(void)
                 temp += LS_val[i];
             }
 
-            /*if(temp == 0)
+            if(temp == 0)
             {
-                if(scan() == 0);
-                {
-                    stop();
-                    break;
-                }
-            }*/
+                stop();
+                INTCONbits.GIE = 0;
+                INTCONbits.PEIE = 0;
+                while(1);
+            }
         }
+        
+        move(PID(error));
     }
 
 }
@@ -175,18 +175,35 @@ int main(void)
     void move(int PID_error)
     {
         PORTHbits.RH3 = 1;
-        Rmotor(720+PID_error);
-        Lmotor(720-PID_error);
+        
+        if(PID_error >= 0)
+        {
+            Rmotor(900);
+            Lmotor(900-PID_error);
+        }
+        else
+        {
+            Rmotor(900+PID_error);
+            Lmotor(900);
+        }
+              
+        
     }
 
     void turn180(void)
     {
         PORTHbits.RH3 = 1;
-        Rmotor(300);
-        Lmotor(700);
-        Delay10KTCYx(250);
-        Delay10KTCYx(100);
-        PORTHbits.RH3 = 0;
+        Rmotor(200);
+        Lmotor(800);
+        Delay10KTCYx(150);
+        
+        unsigned char t = 0;
+        
+        while(t == 0)
+        {
+            LSarray_read();
+            t = LS_val[1] + LS_val[2] + LS_val[3] + LS_val[4];
+        }
     }
 
 //Line sensor functions
@@ -228,7 +245,7 @@ int main(void)
             while(BusyADC());
             value = ReadADC();
             unsigned char temp = i;
-                                                                                                                                if(value > 850)
+            if(value > 850)
                 LS_val[i] = 1;
             else
                 LS_val[i] = 0;
@@ -290,59 +307,73 @@ int main(void)
     //2e. PID functions
     int computeError(void)
     {
-        int close_left;
-        int mid_left;
-        int far_left;
-        int close_right;
-        int mid_right;
-        int far_right;
-        unsigned char error = 0;
+        int close_left = 0;
+        int mid_left = 0;
+        int far_left = 0;
+        int close_right = 0;
+        int mid_right = 0;
+        int far_right = 0;
+        int error = 0;
 
 
-        unsigned char sum = LS_val[0] + LS_val[1] + LS_val[2] + LS_val[3] + LS_val[4] + LS_val[5];
+        int sum = LS_val[0] + LS_val[1] + LS_val[2] + LS_val[3] + LS_val[4] + LS_val[5];
        
 
         if(sum == 0)
         {
             return last_val;
         }
+        
+        if(sum == 1){
+            close_left = -1*LS_val[3];
+            mid_left = -3*LS_val[4];
+            far_left = -9*LS_val[5];
+            close_right = 1*LS_val[2];
+            mid_right = 3*LS_val[1];
+            far_right = 9*LS_val[0];
+            
+            error = (close_left + mid_left + far_left + close_right + mid_right + far_right);
+        }
+        else if(sum == 2){
+            far_left = -3*LS_val[5] + -2*LS_val[4];
+            close_left = -1*LS_val[4] + 0*LS_val[3];
+            close_right = 0*LS_val[2] + 1*LS_val[1];
+            far_right = 2*LS_val[1] + 3*LS_val[0];
+            
+            error = (close_left + far_left + close_right + far_right);
+        }
+        else if(sum == 3){
+            far_left = 0*LS_val[5] + -3*LS_val[4] + 0*LS_val[3];
+            close_left = 0*LS_val[4] + 0*LS_val[3] + 0*LS_val[2];
+            close_right = 0*LS_val[3] + 0*LS_val[2] + 0*LS_val[1];
+            far_right = 0*LS_val[2] + 3*LS_val[1] + 0*LS_val[0];
+            
+            error = (close_left + far_left + close_right + far_right);
+        }
 
-        close_left = -1*LS_val[3];
-        close_right = 1*LS_val[2];
-        mid_left = -4*LS_val[4];
-        mid_right = 4*LS_val[1];
-        far_left = -16*LS_val[5];
-        far_right = 16*LS_val[0];
 
 
-        error = (close_left + mid_left + far_left + close_right + mid_right + far_right);
+       
         last_val = error;
+        
 
-
-        //unsigned char sum = 1*LS_val[0] + 2*LS_val[1] + 4*LS_val[2] + 8*LS_val[3] + 16*LS_val[4] + 32*LS_val[5];
-
-        //if(sum == 0)
-          //  error = error_switch(last_val);
-        //else
-        //{
-           // last_val = sum;
-            //error = error_switch(sum);
-        //}
-
+        
+        //error = error_switch(sum);
+        //last_val = error;
 
         return error;
     }
 
-    unsigned char error_switch(unsigned char sum)
+    int error_switch(int sum)
     {
-        unsigned char temp_error = 0;
+        int temp_error = 0;
 
         switch (sum){
             case 1:
-                temp_error = 12;
+                temp_error = 24;
                 break;
             case 2:
-                temp_error = 3;
+                temp_error = 6;
                 break;
             case 4:
                 temp_error = 1;
@@ -351,41 +382,38 @@ int main(void)
                 temp_error = -1;
                 break;
             case 16:
-                temp_error = -3;
+                temp_error = -6;
                 break;
             case 32:
-                temp_error = -12;
+                temp_error = -24;
                 break;
-            /*case 3:
-                temp_error = 8;
+            case 3:
+                temp_error = 15;
                 break;
             case 6:
-                temp_error = 0;
+                temp_error = 3;
                 break;
             case 12:
                 temp_error = 0;
                 break;
             case 24:
-                temp_error = 0;
+                temp_error = -3;
                 break;
             case 48:
-                temp_error = -8;
+                temp_error = -15;
                 break;
             case 7:
-                temp_error = 3;
+                temp_error = 20;
                 break;
             case 14:
-                temp_error = 0;
+                temp_error = 5;
                 break;
             case 28:
-                temp_error = 0;
+                temp_error = -5;
                 break;
             case 56:
-                temp_error = 0;
+                temp_error = -20;
                 break;
-            case 112:
-                temp_error = -3;
-                break;*/
             default:
                 break;
 
@@ -399,9 +427,9 @@ int main(void)
 
     int PID(int error)
     {
-        int Kp = 4;
+        int Kp = 120;
         int Ki = 0;
-        int Kd = 2;
+        int Kd = 30;
 
         int P;
         int I;
@@ -412,7 +440,7 @@ int main(void)
 
         current_error = error;
 
-        integral = integral + error;
+        integral += error;
 
         P = Kp*error;
         I = Ki*integral;
