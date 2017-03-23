@@ -2,7 +2,7 @@
     //Authors: Thomas Hollis, Charles Shelbourne
     //Project: ESP-18
     //Year: 2017
-    //Version: 6.2
+    //Version: 6.3
 // </editor-fold>
 
 // <editor-fold defaultstate="collapsed" desc="1. File inclusions required">
@@ -16,7 +16,6 @@
 // </editor-fold>
 
 // <editor-fold defaultstate="collapsed" desc="2. Function Declarations">
-
 //Configuration functions
     void config_PWM(void);
     void config_LS(void);
@@ -25,10 +24,10 @@
 //Motor functions
     void stop(void);
     void move(int PID_error);
+    void scan(int error);
     void turn180 (void);
     void Rmotor(int power);
     void Lmotor(int power);
-
 
 //Line sensor functions
     void LEDarray_on(void);
@@ -48,10 +47,11 @@
 
 //Speed encoder functions
     //none required yet
-
+    
 //</editor-fold>
 
 // <editor-fold defaultstate="collapsed" desc="3. Global variables">
+    
 int x = 0;
 int time180 = 1000;
 int integral = 0;
@@ -66,6 +66,7 @@ unsigned char last_val = 0;
 // </editor-fold>
 
 // <editor-fold defaultstate="collapsed" desc="4. Main Line Code">
+
 int main(void)
 {
     config_LS();
@@ -78,43 +79,20 @@ int main(void)
     {
         LSarray_read();
         int error = computeError();
-        int temp = 0; //global?
-        
-        for(int i = 0; i < 6; i++)
-        {
-            temp += LS_val[i];
-        }
-        
-        if(temp == 0 && (error <= 5 || error >= -5))
-        {
-            Delay10KTCYx(25);
-            LSarray_read();
+        int PID_error = PID(error);
 
-            for(int i = 0; i < 6; i++)
-            {
-                temp += LS_val[i];
-            }
+        move(PID_error);
 
-            if(temp == 0)
-            {
-                stop();
-                INTCONbits.GIE = 0;
-                INTCONbits.PEIE = 0;
-                while(1);
-            }
-        }
-        
-        move(PID(error));
     }
-
 }
+
 // </editor-fold>
 
 // <editor-fold defaultstate="collapsed" desc="5. Functions">
+
 //Configuration functions
     void config_PWM(void)
     {
-        //pwm output
         TRISGbits.RG3 = 0;
         TRISGbits.RG4 = 0;
 
@@ -122,7 +100,7 @@ int main(void)
 
         //enable bit
         PORTHbits.RH3 = 0;
-
+        
         //unipolar setting
         PORTHbits.RH0 = 1;
         PORTHbits.RH1 = 1;
@@ -155,8 +133,10 @@ int main(void)
         TRISB =0x00;
         TRISC = 0x00;
     }
-
+    
+    
 //Motor functions
+    
     void Rmotor(int power)
     {
         SetDCPWM4(power);
@@ -169,50 +149,55 @@ int main(void)
 
     void stop(void)
     {
-        PORTHbits.RH3 = 0;
+        Rmotor(350);
+        Lmotor(350);
     }
 
     void move(int PID_error)
     {
         PORTHbits.RH3 = 1;
+
+        if(PID_error < 10 && PID_error > -10)
+        {
+           PID_error = 0;
+        }
         
         if(PID_error >= 0)
         {
-            Rmotor(900);
-            Lmotor(900-PID_error);
+            Rmotor(750);
+            Lmotor(750-PID_error);
         }
         else
         {
-            Rmotor(900+PID_error);
-            Lmotor(900);
+            Rmotor(750+PID_error);
+            Lmotor(750);
         }
-              
         
     }
 
     void turn180(void)
     {
         PORTHbits.RH3 = 1;
-        Rmotor(200);
-        Lmotor(800);
-        Delay10KTCYx(150);
-        
+        Rmotor(350);
+        Lmotor(650);
+        Delay10KTCYx(120);
+        integral = 0;
         unsigned char t = 0;
-        
+
         while(t == 0)
         {
             LSarray_read();
-            t = LS_val[1] + LS_val[2] + LS_val[3] + LS_val[4];
+            t = LS_val[0] + LS_val[1] + LS_val[2] + LS_val[3] + LS_val[4] + LS_val[5];
         }
     }
 
+    
 //Line sensor functions
     void LEDarray_on(void)
     {
         LATA = 0b00111111;
     }
-
-    void LEDarray_off(void)
+void LEDarray_off(void)
     {
         LATA = 0b00000000;
     }
@@ -220,7 +205,7 @@ int main(void)
     void LSarray_read(void)
     {
         int value = 0;
-
+        
         for(int i = 0; i < 6; i++)
         {
             value = 0;
@@ -240,12 +225,14 @@ int main(void)
                 break;
                 default:break;
             }
-
+            
             ConvertADC();
             while(BusyADC());
             value = ReadADC();
+            
             unsigned char temp = i;
-            if(value > 850)
+
+            if(value > 930)
                 LS_val[i] = 1;
             else
                 LS_val[i] = 0;
@@ -264,7 +251,9 @@ int main(void)
         return breakdetected;
     }
 
+    
     //Proximity sensor functions
+
     void enable_global_interrupts(void)
     {
         INTCONbits.GIE = 1;
@@ -279,8 +268,8 @@ int main(void)
             s = s^1;
             LATBbits.LATB0 = s;   //J2 13
             WriteTimer0(40563);
-
         }
+
         if(PIR3bits.CCP3IF == 1)
         {
             PIR3bits.CCP3IF = 0;  //CCP4 interrupt bit zeroed
@@ -295,16 +284,17 @@ int main(void)
             {
                 logic_high = ReadTimer3();
                 CCP3CON = 5;     //configure to interrupt on rising edge
-                if(logic_high < 4080)
+                if(logic_high < 4000)
                 {    //1360 ticks of clock before LED's turn on relates to 544uS that echo signal is high => aprox 11.3cm
                     turn180();     // uS/48 = distance
                 }
             }
-
         }
     }
 
+    
     //2e. PID functions
+
     int computeError(void)
     {
         int close_left = 0;
@@ -315,145 +305,70 @@ int main(void)
         int far_right = 0;
         int error = 0;
 
-
         int sum = LS_val[0] + LS_val[1] + LS_val[2] + LS_val[3] + LS_val[4] + LS_val[5];
-       
 
-        if(sum == 0)
+        if(sum == 1)
         {
-            return last_val;
-        }
-        
-        if(sum == 1){
             close_left = -1*LS_val[3];
-            mid_left = -3*LS_val[4];
-            far_left = -9*LS_val[5];
+            mid_left = -4*LS_val[4];
+            far_left = -12*LS_val[5];
             close_right = 1*LS_val[2];
-            mid_right = 3*LS_val[1];
-            far_right = 9*LS_val[0];
-            
+            mid_right = 4*LS_val[1];
+            far_right = 12*LS_val[0];
+
             error = (close_left + mid_left + far_left + close_right + mid_right + far_right);
         }
-        else if(sum == 2){
-            far_left = -3*LS_val[5] + -2*LS_val[4];
-            close_left = -1*LS_val[4] + 0*LS_val[3];
-            close_right = 0*LS_val[2] + 1*LS_val[1];
-            far_right = 2*LS_val[1] + 3*LS_val[0];
-            
+        else if(sum == 2)
+        {
+            far_left = -5*LS_val[5] + -3*LS_val[4];
+            close_left = -2*LS_val[4] + 0*LS_val[3];
+            close_right = 0*LS_val[2] + 2*LS_val[1];
+            far_right = 3*LS_val[1] + 5*LS_val[0];
+
             error = (close_left + far_left + close_right + far_right);
         }
-        else if(sum == 3){
-            far_left = 0*LS_val[5] + -3*LS_val[4] + 0*LS_val[3];
+        else if(sum == 3)
+        {
+            far_left = 0*LS_val[5] + -4*LS_val[4] + 0*LS_val[3];
             close_left = 0*LS_val[4] + 0*LS_val[3] + 0*LS_val[2];
             close_right = 0*LS_val[3] + 0*LS_val[2] + 0*LS_val[1];
-            far_right = 0*LS_val[2] + 3*LS_val[1] + 0*LS_val[0];
-            
+            far_right = 0*LS_val[2] + 4*LS_val[1] + 0*LS_val[0];
+
             error = (close_left + far_left + close_right + far_right);
         }
-
-
-
-       
-        last_val = error;
-        
-
-        
-        //error = error_switch(sum);
-        //last_val = error;
 
         return error;
     }
 
-    int error_switch(int sum)
-    {
-        int temp_error = 0;
-
-        switch (sum){
-            case 1:
-                temp_error = 24;
-                break;
-            case 2:
-                temp_error = 6;
-                break;
-            case 4:
-                temp_error = 1;
-                break;
-            case 8:
-                temp_error = -1;
-                break;
-            case 16:
-                temp_error = -6;
-                break;
-            case 32:
-                temp_error = -24;
-                break;
-            case 3:
-                temp_error = 15;
-                break;
-            case 6:
-                temp_error = 3;
-                break;
-            case 12:
-                temp_error = 0;
-                break;
-            case 24:
-                temp_error = -3;
-                break;
-            case 48:
-                temp_error = -15;
-                break;
-            case 7:
-                temp_error = 20;
-                break;
-            case 14:
-                temp_error = 5;
-                break;
-            case 28:
-                temp_error = -5;
-                break;
-            case 56:
-                temp_error = -20;
-                break;
-            default:
-                break;
-
-        }
-
-
-
-        return temp_error;
-
-    }
-
     int PID(int error)
     {
-        int Kp = 120;
+        int Kp = 60;
         int Ki = 0;
-        int Kd = 30;
-
+        int Kd = 18;
+        
         int P;
         int I;
         int D;
 
         int current_error;
+
         int output;
 
         current_error = error;
 
         integral += error;
-
-        P = Kp*error;
-        I = Ki*integral;
+		P = Kp*error;
+        I = (integral + (Ki - 1))/Ki; //round up integral/k\Ki
         D = Kd*(current_error - prev_error);
 
         prev_error = error;
-
-        output = P + I + D;
+        
+        output = P + (int)I + D;
 
         return output;
     }
 
     //2e. Speed encoder functions
-        //none required yet
 
+        //none required yet
 // </editor-fold>
