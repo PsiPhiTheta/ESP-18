@@ -2,7 +2,7 @@
     //Authors: Thomas Hollis, Charles Shelbourne
     //Project: ESP-18
     //Year: 2017
-    //Version: 6.3
+    //Version: 6.5
 // </editor-fold>
 
 // <editor-fold defaultstate="collapsed" desc="1. File inclusions required">
@@ -56,6 +56,8 @@ int x = 0;
 int time180 = 1000;
 int integral = 0;
 int prev_error = 0;
+int DTimer = 0;
+int D = 0;
 
 volatile char y=0,s=0;
 volatile unsigned int logic_high =0;
@@ -80,9 +82,28 @@ int main(void)
         LSarray_read();
         int error = computeError();
         int PID_error = PID(error);
+        int temp = 0;
 
+        for(int i = 0; i < 6; i++)
+        {
+            temp += LS_val[i];
+        }
+
+        if(temp == 0)
+        {
+            Delay10KTCYx(40);
+
+            if(temp == 0)
+            {
+                stop();
+                INTCONbits.GIE = 0;
+                INTCONbits.PEIE = 0;
+                PORTHbits.RH3 = 0;
+                while(1);
+            }
+        }
+        
         move(PID_error);
-
     }
 }
 
@@ -157,24 +178,32 @@ int main(void)
     {
         PORTHbits.RH3 = 1;
 
-        if(PID_error < 10 && PID_error > -10)
-        {
-           PID_error = 0;
-        }
+        //if(PID_error < 20 && PID_error > -20)
+        //{
+        //   PID_error = 0;
+        //}
         
         if(PID_error >= 0)
         {
-            Rmotor(750);
-            Lmotor(750-PID_error);
+            Rmotor(820);
+            Lmotor(820-PID_error);
         }
         else
         {
-            Rmotor(750+PID_error);
-            Lmotor(750);
+            Rmotor(820+PID_error);
+            Lmotor(820);
         }
         
     }
+	void scan(int error)
+    {
+        PORTHbits.RH3 = 1;
+        
+        Rmotor(500+error);
+        Lmotor(500-error);
 
+    }
+    
     void turn180(void)
     {
         PORTHbits.RH3 = 1;
@@ -197,7 +226,8 @@ int main(void)
     {
         LATA = 0b00111111;
     }
-void LEDarray_off(void)
+
+    void LEDarray_off(void)
     {
         LATA = 0b00000000;
     }
@@ -284,7 +314,7 @@ void LEDarray_off(void)
             {
                 logic_high = ReadTimer3();
                 CCP3CON = 5;     //configure to interrupt on rising edge
-                if(logic_high < 4000)
+                if(logic_high < 1550)
                 {    //1360 ticks of clock before LED's turn on relates to 544uS that echo signal is high => aprox 11.3cm
                     turn180();     // uS/48 = distance
                 }
@@ -311,44 +341,51 @@ void LEDarray_off(void)
         {
             close_left = -1*LS_val[3];
             mid_left = -4*LS_val[4];
-            far_left = -12*LS_val[5];
+            far_left = -64*LS_val[5];
             close_right = 1*LS_val[2];
             mid_right = 4*LS_val[1];
-            far_right = 12*LS_val[0];
+            far_right = 64*LS_val[0];
 
             error = (close_left + mid_left + far_left + close_right + mid_right + far_right);
         }
         else if(sum == 2)
         {
-            far_left = -5*LS_val[5] + -3*LS_val[4];
-            close_left = -2*LS_val[4] + 0*LS_val[3];
-            close_right = 0*LS_val[2] + 2*LS_val[1];
-            far_right = 3*LS_val[1] + 5*LS_val[0];
-
-            error = (close_left + far_left + close_right + far_right);
+            far_left = -36*LS_val[5] + -9*LS_val[4];
+            close_left = -3*LS_val[4] + 0*LS_val[3];
+            close_right = 0*LS_val[2] + 3*LS_val[1];
+            far_right = 9*LS_val[1] + 36*LS_val[0];
+			error = (close_left + far_left + close_right + far_right);
         }
         else if(sum == 3)
         {
-            far_left = 0*LS_val[5] + -4*LS_val[4] + 0*LS_val[3];
-            close_left = 0*LS_val[4] + 0*LS_val[3] + 0*LS_val[2];
-            close_right = 0*LS_val[3] + 0*LS_val[2] + 0*LS_val[1];
-            far_right = 0*LS_val[2] + 4*LS_val[1] + 0*LS_val[0];
+            far_left = -16*LS_val[5] + -14*LS_val[4] + -10*LS_val[3];
+            close_left = -2*LS_val[4] + 0*LS_val[3] + 0*LS_val[2];
+            close_right = 2*LS_val[3] + 0*LS_val[2] + 0*LS_val[1];
+            far_right = 10*LS_val[2] + 14*LS_val[1] + 16*LS_val[0];
 
             error = (close_left + far_left + close_right + far_right);
         }
+        else if(sum == 4)
+        {
+            far_left = -3*LS_val[5] + 0*LS_val[4] + 0*LS_val[3] + 0*LS_val[2];
+            far_right = 0*LS_val[2] + 0*LS_val[2] + 0*LS_val[1] + 3*LS_val[0];
+
+            error = (close_left + far_left + close_right + far_right);
+        }
+
 
         return error;
     }
 
     int PID(int error)
     {
-        int Kp = 60;
-        int Ki = 0;
-        int Kd = 18;
+        int Kp = 12;
+        int Ki = 40;
+        int Kd = 4;
         
-        int P;
-        int I;
-        int D;
+        int P = 0;
+        int I = 0;
+        
 
         int current_error;
 
@@ -356,14 +393,22 @@ void LEDarray_off(void)
 
         current_error = error;
 
-        integral += error;
-		P = Kp*error;
-        I = (integral + (Ki - 1))/Ki; //round up integral/k\Ki
-        D = Kd*(current_error - prev_error);
+        integral += (error - prev_error);
 
-        prev_error = error;
+        P = Kp*error;
+        I = (integral + (Ki - 1))/Ki;
+        D = Kd*(current_error - prev_error);
         
-        output = P + (int)I + D;
+        DTimer++;
+        
+        if(DTimer == 10)
+        {
+            prev_error = error;
+            DTimer = 0;
+        }
+       
+        
+        output = P + I + D;
 
         return output;
     }
