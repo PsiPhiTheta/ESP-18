@@ -1,5 +1,5 @@
 //Authors: Thomas Hollis, Charles Shelbourne
-//Version: 7.0
+//Version: 7.1
 
 #include "xc_config_settings.h"
 #include "delays.h"
