@@ -63,8 +63,12 @@ int main(void)
         }
         if(sensor_array_val == 0) //if all sensors on black
         {
-            Delay10KTCYx(70); //wait for momentum to stop
+            Delay10KTCYx(15); //wait for momentum to stop
             read_line_sensors(); //updates line_sensors array with new values of line sensors
+			for(int i = 0; i < 6; i++) //reads all sensor values and writes into variable
+			{
+				sensor_array_val = sensor_array_val + line_sensor[i]; 
+			}
             if(sensor_array_val == 0) //if all sensors still on black
             {
                 move_stop(); //stop
