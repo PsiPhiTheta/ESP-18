@@ -1,5 +1,5 @@
 //Authors: Thomas Hollis, Charles Shelbourne
-//Version: 7.1
+//Version: 7.2
 
 #include "xc_config_settings.h"
 #include "delays.h"
@@ -64,6 +64,7 @@ int main(void)
         if(sensor_array_val == 0) //if all sensors on black
         {
             Delay10KTCYx(70); //wait for momentum to stop
+            read_line_sensors(); //updates line_sensors array with new values of line sensors
             if(sensor_array_val == 0) //if all sensors still on black
             {
                 move_stop(); //stop
