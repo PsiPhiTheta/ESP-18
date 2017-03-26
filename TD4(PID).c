@@ -1,419 +1,299 @@
-// <editor-fold defaultstate="collapsed" desc="0. Code information">
-    //Authors: Thomas Hollis, Charles Shelbourne
-    //Project: ESP-18
-    //Year: 2017
-    //Version: 6.5
-// </editor-fold>
+//Authors: Thomas Hollis, Charles Shelbourne
+//Version: 7.0
 
-// <editor-fold defaultstate="collapsed" desc="1. File inclusions required">
-#include "xc_configuration_bits.h"
-#include "adc.h"
-#include "timers.h"
+#include "xc_config_settings.h"
 #include "delays.h"
+#include "timers.h"
 #include "math.h"
-#include "pwm.h"
 #include "capture.h"
-// </editor-fold>
+#include "pwm.h"
+#include "adc.h"
 
-// <editor-fold defaultstate="collapsed" desc="2. Function Declarations">
-//Configuration functions
-    void config_PWM(void);
-    void config_LS(void);
-    void config_PS(void);
+#define WHITE_LINE 800
+#define WALL_DISTANCE 4000
+#define BASE_SPEED 750
+#define MAX_SPEED 820
+#define BREAK_SPEED 350
+#define Kp 9
+#define Ki 0
+#define Kd 4
 
-//Motor functions
-    void stop(void);
-    void move(int PID_error);
-    void scan(int error);
-    void turn180 (void);
-    void Rmotor(int power);
-    void Lmotor(int power);
+void interrupt isr(void);
+void setup_PWM(void);
+void setup_line_sensors(void);
+void setup_proximity_sensor(void);
+void setup_global_interrupts(void);
+void read_line_sensors(void);
+int calculate_proportional_error(void);
+int calculate_PID_error(int error);
+void move_algorithm(int PID_error);
+void move_180 (void);
+void move_stop(void);
+void motor_right(int power);
+void motor_left(int power);
 
-//Line sensor functions
-    void LEDarray_on(void);
-    void LEDarray_off(void);
-    void LSarray_read(void);
-    void LEDarray_write(unsigned char x);
-    unsigned char LEDarray_breakdetected(void);
+unsigned char line_sensor[6] = {0, 0, 0, 0, 0, 0}; //stores digital 1 or 0 for each line sensor
 
-//PID functions
-    int computeError(void);
-    int error_switch(int sum);
-    int PID(int error);
+int P = 0; //proportional term
+int I = 0; //integral term
+int D = 0; //derivative term
 
-//Proximity sensor functions
-    void interrupt isr(void);
-    void enable_global_interrupts(void);
+int previous_error = 0; //stores value of previous error for Kd
+int counter = 0; //sets the refresh rate of Kd
 
-//Speed encoder functions
-    //none required yet
-    
-//</editor-fold>
-
-// <editor-fold defaultstate="collapsed" desc="3. Global variables">
-    
-int x = 0;
-int time180 = 1000;
-int integral = 0;
-int prev_error = 0;
-int DTimer = 0;
-int D = 0;
-
-volatile char y=0,s=0;
-volatile unsigned int logic_high =0;
-
-unsigned char LS_val[6] = {0, 0, 0, 0, 0, 0};
-unsigned char last_val = 0;
-
-// </editor-fold>
-
-// <editor-fold defaultstate="collapsed" desc="4. Main Line Code">
+volatile char x=0; //temporary variable for ISR
+volatile char y=0; //temporary variable for ISR
+volatile unsigned int distance = 0; //ISR variable to store distance of proximity sensor to a wall
 
 int main(void)
 {
-    config_LS();
-    config_PS();
-    config_PWM();
-    enable_global_interrupts();
-    OpenADC(ADC_FOSC_16 & ADC_RIGHT_JUST & ADC_12_TAD, ADC_CH0 & ADC_INT_OFF & ADC_VREFPLUS_VDD & ADC_VREFMINUS_VSS, 0);
+    setup_line_sensors();
+    setup_proximity_sensor();
+    setup_PWM();
+    setup_global_interrupts();
 
     while (1)
     {
-        LSarray_read();
-        int error = computeError();
-        int PID_error = PID(error);
-        int temp = 0;
-
-        for(int i = 0; i < 6; i++)
+        read_line_sensors(); //updates line_sensors array with new values of line sensors
+        
+        int sensor_array_val = 0; //contains all values of sensor array
+        for(int i = 0; i < 6; i++) //reads all sensor values and writes into variable
         {
-            temp += LS_val[i];
+            sensor_array_val = sensor_array_val + line_sensor[i]; 
         }
-
-        if(temp == 0)
+        if(sensor_array_val == 0) //if all sensors on black
         {
-            Delay10KTCYx(40);
-
-            if(temp == 0)
+            Delay10KTCYx(70); //wait for momentum to stop
+            if(sensor_array_val == 0) //if all sensors still on black
             {
-                stop();
-                INTCONbits.GIE = 0;
-                INTCONbits.PEIE = 0;
-                PORTHbits.RH3 = 0;
-                while(1);
+                move_stop(); //stop
+                Delay10KTCYx(20); //waits for stop to finish executing
+                INTCONbits.GIE = 0; //disables interrupts
+                INTCONbits.PEIE = 0; //disables interrupts
+                PORTHbits.RH3 = 0; //disables enable bit
+                while(1); //stops forever
             }
-        }
-        
-        move(PID_error);
-    }
-}
-
-// </editor-fold>
-
-// <editor-fold defaultstate="collapsed" desc="5. Functions">
-
-//Configuration functions
-    void config_PWM(void)
-    {
-        TRISGbits.RG3 = 0;
-        TRISGbits.RG4 = 0;
-
-        TRISH = 0b10010100;
-
-        //enable bit
-        PORTHbits.RH3 = 0;
-        
-        //unipolar setting
-        PORTHbits.RH0 = 1;
-        PORTHbits.RH1 = 1;
-
-        //direction bits
-        PORTHbits.RH5 = 0;
-        PORTHbits.RH6 = 0;
-
-        //timer configuration
-        OpenTimer2(TIMER_INT_OFF & T2_PS_1_1 & T2_POST_1_1);
-
-        //OpenPWM2
-        OpenPWM4(252);
-        OpenPWM5(252);
-    }
-
-    void config_LS(void)
-    {
-        ADCON1 = 0x00;
-        TRISA = 0b00000000;
-    }
-
-    void config_PS(void)
-    {
-        OpenTimer3(TIMER_INT_OFF & T1_16BIT_RW & T1_SOURCE_INT & T1_PS_1_1 & T1_OSC1EN_ON & T1_SYNC_EXT_OFF);
-        OpenTimer0(TIMER_INT_ON & T0_16BIT & T0_SOURCE_INT & T0_PS_1_1);
-        WriteTimer0(12536);
-        OpenCapture3(CAPTURE_INT_ON & C3_EVERY_RISE_EDGE);
-
-        TRISB =0x00;
-        TRISC = 0x00;
-    }
-    
-    
-//Motor functions
-    
-    void Rmotor(int power)
-    {
-        SetDCPWM4(power);
-    }
-
-    void Lmotor(int power)
-    {
-        SetDCPWM5(power);
-    }
-
-    void stop(void)
-    {
-        Rmotor(350);
-        Lmotor(350);
-    }
-
-    void move(int PID_error)
-    {
-        PORTHbits.RH3 = 1;
-
-        //if(PID_error < 20 && PID_error > -20)
-        //{
-        //   PID_error = 0;
-        //}
-        
-        if(PID_error >= 0)
-        {
-            Rmotor(820);
-            Lmotor(820-PID_error);
         }
         else
         {
-            Rmotor(820+PID_error);
-            Lmotor(820);
+            move_algorithm(calculate_PID_error(calculate_proportional_error())); //move according to PID algorithm
         }
-        
     }
-	void scan(int error)
-    {
-        PORTHbits.RH3 = 1;
-        
-        Rmotor(500+error);
-        Lmotor(500-error);
+}
 
+void interrupt isr(void)
+{
+    if(INTCONbits.TMR0IF) //Proximity trigger signal
+    {
+        INTCONbits.TMR0IF =0;
+        x = x^1;
+        LATBbits.LATB0 = x;   //J2 13
+        WriteTimer0(40563);
     }
-    
-    void turn180(void)
-    {
-        PORTHbits.RH3 = 1;
-        Rmotor(350);
-        Lmotor(650);
-        Delay10KTCYx(120);
-        integral = 0;
-        unsigned char t = 0;
 
-        while(t == 0)
+    if(PIR3bits.CCP3IF == 1)
+    {
+        PIR3bits.CCP3IF = 0;  //CCP4 interrupt bit zeroed
+        y= y^1;              //switched between 1 and 0
+
+        if(y==1)
         {
-            LSarray_read();
-            t = LS_val[0] + LS_val[1] + LS_val[2] + LS_val[3] + LS_val[4] + LS_val[5];
+            CCP3CON = 4;  //configure CCP 4 to interrupt on falling edge
+            WriteTimer3(0);  //refresh timer3
+        }
+        else
+        {
+            distance = ReadTimer3();
+            CCP3CON = 5;     //configure to interrupt on rising edge
+            if(distance < WALL_DISTANCE)
+            {    //1360 ticks of clock before LED's turn on relates to 544uS that echo signal is high => aprox 11.3cm
+                move_180();     // uS/48 = distance
+            }
         }
     }
+}    
 
+void setup_PWM(void)
+{
+    TRISGbits.RG3 = 0; //setup IO
+    TRISGbits.RG4 = 0; //setup IO
+    TRISH = 0b10010100; //setup IO
+
+    PORTHbits.RH3 = 0; //enable bit
+
+    PORTHbits.RH0 = 1; //bipolar
+    PORTHbits.RH1 = 1; //bipolar
+
+    PORTHbits.RH5 = 0; //direction bit
+    PORTHbits.RH6 = 0; //direction bit
+
+    OpenTimer2(TIMER_INT_OFF & T2_PS_1_1 & T2_POST_1_1); //timer config
+
+    OpenPWM4(252); //setup PWM
+    OpenPWM5(252); //setup PWM
+}
+
+void setup_line_sensors(void)
+{
+    ADCON1 = 0x00; //setup analogue/digital
+    TRISA = 0b00000000; //setup IO
+    OpenADC(ADC_FOSC_16 & ADC_RIGHT_JUST & ADC_12_TAD, ADC_CH0 & ADC_INT_OFF & ADC_VREFPLUS_VDD & ADC_VREFMINUS_VSS, 0); //configures ADC
+}
+
+void setup_proximity_sensor(void)
+{
+    OpenTimer3(TIMER_INT_OFF & T1_16BIT_RW & T1_SOURCE_INT & T1_PS_1_1 & T1_OSC1EN_ON & T1_SYNC_EXT_OFF); //setup timer
+    OpenTimer0(TIMER_INT_ON & T0_16BIT & T0_SOURCE_INT & T0_PS_1_1); //setup timer
+    WriteTimer0(12536); //setup timer offset
+
+    OpenCapture3(CAPTURE_INT_ON & C3_EVERY_RISE_EDGE); //setup Capture
+
+    TRISB =0x00; //setup IO
+    TRISC = 0x00; //setup IO
+}
     
-//Line sensor functions
-    void LEDarray_on(void)
-    {
-        LATA = 0b00111111;
-    }
+void setup_global_interrupts(void)
+{
+    INTCONbits.GIE = 1;
+    INTCONbits.PEIE = 1;
+}
 
-    void LEDarray_off(void)
-    {
-        LATA = 0b00000000;
-    }
-
-    void LSarray_read(void)
+void read_line_sensors(void)
+{
+    for(int i = 0; i < 6; i++)
     {
         int value = 0;
-        
-        for(int i = 0; i < 6; i++)
+        switch(i)
         {
-            value = 0;
-            switch(i)
-            {
-                case 0: SetChanADC(ADC_CH5);
-                break;
-                case 1: SetChanADC(ADC_CH6);
-                break;
-                case 2: SetChanADC(ADC_CH7);
-                break;
-                case 3: SetChanADC(ADC_CH8);
-                break;
-                case 4: SetChanADC(ADC_CH9);
-                break;
-                case 5: SetChanADC(ADC_CH10);
-                break;
-                default:break;
-            }
-            
-            ConvertADC();
-            while(BusyADC());
-            value = ReadADC();
-            
-            unsigned char temp = i;
+            case 0: SetChanADC(ADC_CH5);
+            break;
+            case 1: SetChanADC(ADC_CH6);
+            break;
+            case 2: SetChanADC(ADC_CH7);
+            break;
+            case 3: SetChanADC(ADC_CH8);
+            break;
+            case 4: SetChanADC(ADC_CH9);
+            break;
+            case 5: SetChanADC(ADC_CH10);
+            break;
+            default:break;
+        }
 
-            if(value > 930)
-                LS_val[i] = 1;
-            else
-                LS_val[i] = 0;
+        ConvertADC();
+        while(BusyADC());
+        value = ReadADC();
+
+        if(value > WHITE_LINE)
+        {
+            line_sensor[i] = 1; //assign binary 1/true/on
+        }
+        else
+        {
+            line_sensor[i] = 0; //assign binary 0/false/off
         }
     }
-
-    void LEDarray_write(unsigned char x)
-    {
-        LATA = x;
-    }
-
-    unsigned char LEDarray_breakdetected(void)
-    {
-        unsigned char breakdetected = 0;
-        breakdetected = 1;
-        return breakdetected;
-    }
-
+}
     
-    //Proximity sensor functions
-
-    void enable_global_interrupts(void)
-    {
-        INTCONbits.GIE = 1;
-        INTCONbits.PEIE = 1;
-    }
-
-    void interrupt isr(void)
-    {
-        if(INTCONbits.TMR0IF) //Proximity trigger signal
-        {
-            INTCONbits.TMR0IF =0;
-            s = s^1;
-            LATBbits.LATB0 = s;   //J2 13
-            WriteTimer0(40563);
-        }
-
-        if(PIR3bits.CCP3IF == 1)
-        {
-            PIR3bits.CCP3IF = 0;  //CCP4 interrupt bit zeroed
-            y= y^1;              //switched between 1 and 0
-
-            if(y==1)
-            {
-                CCP3CON = 4;  //configure CCP 4 to interrupt on falling edge
-                WriteTimer3(0);  //refresh timer3
-            }
-            else
-            {
-                logic_high = ReadTimer3();
-                CCP3CON = 5;     //configure to interrupt on rising edge
-                if(logic_high < 1550)
-                {    //1360 ticks of clock before LED's turn on relates to 544uS that echo signal is high => aprox 11.3cm
-                    turn180();     // uS/48 = distance
-                }
-            }
-        }
-    }
-
+int calculate_proportional_error(void)
+{
+    int sensors_detected = line_sensor[0] + line_sensor[1] + line_sensor[2] + line_sensor[3] + line_sensor[4] + line_sensor[5];
     
-    //2e. PID functions
-
-    int computeError(void)
+    switch (sensors_detected) //returns different error if sensor collisions occur
     {
-        int close_left = 0;
-        int mid_left = 0;
-        int far_left = 0;
-        int close_right = 0;
-        int mid_right = 0;
-        int far_right = 0;
-        int error = 0;
+        case 1:  //no sensor collisions
+            return (80*line_sensor[0] + 20*line_sensor[1] + 1*line_sensor[2] + -1*line_sensor[3] + -20*line_sensor[4] + -80*line_sensor[5]); //coefficients set by trial and error
+            
+        case 2: //2 sensor collisions 
+            return (46*line_sensor[0] + 25*line_sensor[1] + 0*line_sensor[2] + 0*line_sensor[3] + -25*line_sensor[4] + -46*line_sensor[5]); //similar to previously but middle is ignored and outer is reinforced
+        
+        case 3: //3 sensor collisions
+            return (24*line_sensor[0] + 20*line_sensor[1] + 10*line_sensor[2] + -10*line_sensor[3] + -20*line_sensor[4] + -24*line_sensor[5]); //similar to previously but less strong since 3 triggered
+        
+        case 4: //4 sensor collisions
+            return (15*line_sensor[0] + 0*line_sensor[1] + 0*line_sensor[2] + 0*line_sensor[3] + 0*line_sensor[4] + -15*line_sensor[5]);
+            
+        default:
+            return 0;
+    }
+}
 
-        int sum = LS_val[0] + LS_val[1] + LS_val[2] + LS_val[3] + LS_val[4] + LS_val[5];
+int calculate_PID_error(int error)
+{
+    counter++;
 
-        if(sum == 1)
-        {
-            close_left = -1*LS_val[3];
-            mid_left = -4*LS_val[4];
-            far_left = -64*LS_val[5];
-            close_right = 1*LS_val[2];
-            mid_right = 4*LS_val[1];
-            far_right = 64*LS_val[0];
+    P = Kp*error;
+    I = Ki*0; //not yet used
+    D = Kd*(error - previous_error);
 
-            error = (close_left + mid_left + far_left + close_right + mid_right + far_right);
-        }
-        else if(sum == 2)
-        {
-            far_left = -36*LS_val[5] + -9*LS_val[4];
-            close_left = -3*LS_val[4] + 0*LS_val[3];
-            close_right = 0*LS_val[2] + 3*LS_val[1];
-            far_right = 9*LS_val[1] + 36*LS_val[0];
-			error = (close_left + far_left + close_right + far_right);
-        }
-        else if(sum == 3)
-        {
-            far_left = -16*LS_val[5] + -14*LS_val[4] + -10*LS_val[3];
-            close_left = -2*LS_val[4] + 0*LS_val[3] + 0*LS_val[2];
-            close_right = 2*LS_val[3] + 0*LS_val[2] + 0*LS_val[1];
-            far_right = 10*LS_val[2] + 14*LS_val[1] + 16*LS_val[0];
-
-            error = (close_left + far_left + close_right + far_right);
-        }
-        else if(sum == 4)
-        {
-            far_left = -3*LS_val[5] + 0*LS_val[4] + 0*LS_val[3] + 0*LS_val[2];
-            far_right = 0*LS_val[2] + 0*LS_val[2] + 0*LS_val[1] + 3*LS_val[0];
-
-            error = (close_left + far_left + close_right + far_right);
-        }
-
-
-        return error;
+    if(counter == 10) //checks if its time to update D
+    {
+        previous_error = error; //updates D
+        counter = 0; //resets counter
     }
 
-    int PID(int error)
+    return (P + I + D);
+}
+    
+void move_algorithm(int PID_error)
+{
+    PORTHbits.RH3 = 1; //enables enable bit
+
+    if(PID_error > MAX_SPEED) //prevent max overflow
     {
-        int Kp = 12;
-        int Ki = 40;
-        int Kd = 4;
-        
-        int P = 0;
-        int I = 0;
-        
-
-        int current_error;
-
-        int output;
-
-        current_error = error;
-
-        integral += (error - prev_error);
-
-        P = Kp*error;
-        I = (integral + (Ki - 1))/Ki;
-        D = Kd*(current_error - prev_error);
-        
-        DTimer++;
-        
-        if(DTimer == 10)
-        {
-            prev_error = error;
-            DTimer = 0;
-        }
-       
-        
-        output = P + I + D;
-
-        return output;
+       PID_error = MAX_SPEED;
+    }
+    else if(PID_error < -MAX_SPEED) //prevent min overflow
+    {
+        PID_error = -MAX_SPEED;
     }
 
-    //2e. Speed encoder functions
+    if(PID_error >= 0) //writes function input (PID) to motors, if PID error is positive
+    {
+        motor_right(BASE_SPEED);
+        motor_left(BASE_SPEED-PID_error); //turns left by slowing the left wheel
+    }
+    else //if PID error is negative
+    {
+        motor_right(BASE_SPEED+PID_error); //turns right by slowing the right wheel
+        motor_left(BASE_SPEED);
+    }  
+}
+    
+void move_180(void)
+{
+    PORTHbits.RH3 = 1;
 
-        //none required yet
-// </editor-fold>
+    motor_right(300); //turns
+    motor_left(300); //turns
+    Delay10KTCYx(60); //turns
+    motor_left(700); //turns
+    motor_right(340); //turns
+    Delay10KTCYx(100); //turns
+
+    unsigned char t = 0; //initialises temporary variable
+
+    while(t == 0) //while line is not detected, keep turning
+    {
+        read_line_sensors(); //updates line sensor value
+        t = line_sensor[2] + line_sensor[3]; //updates temporary variable with middle two line sensors
+    }
+}
+
+void move_stop(void)
+{
+    motor_left(BREAK_SPEED);
+    motor_right(BREAK_SPEED);
+}
+    
+void motor_right(int power)
+{
+    SetDCPWM4(power); //sets power to motor
+}
+
+void motor_left(int power)
+{
+    SetDCPWM5(power); //sets power to motor
+}
+
+//Debug status: debugged, tested
